@@ -1,0 +1,243 @@
+// Hash table implementation using separate chaining
+type Dict<K, V> = class {
+    var buckets: Array<List<Entry<K, V>>>;
+    var size: Int;
+    var capacity: Int;
+    let load_factor: Float;
+
+    constructor new() {
+        this.capacity = 16;
+        this.size = 0;
+        this.load_factor = 0.75;
+        this.buckets = Array.with_capacity_and_init(this.capacity, fun(var idx: Int) => empty());
+    }
+
+    constructor with_capacity(var initial_capacity: Int) {
+        this.capacity = initial_capacity;
+        this.size = 0;
+        this.load_factor = 0.75;
+        this.buckets = Array.with_capacity_and_init(this.capacity, fun(var idx: Int) => empty());
+    }
+
+    fun get_bucket_index(var key: K): Int {
+        let h = hash(key);
+        return (h % this.capacity + this.capacity) % this.capacity;
+    }
+
+    fun insert(var key: K, var value: V): Bool {
+        let idx = this.get_bucket_index(key);
+        let bucket = this.buckets[idx];
+
+        // Check if key already exists
+        var current = bucket;
+        while !is_empty(current) {
+            let entry = head(current);
+            if equals(entry.key, key) {
+                entry.value = value;
+                return false;
+            }
+            current = tail(current);
+        }
+
+        // Add new entry
+        let new_entry = Entry.new(key, value);
+        this.buckets[idx] = prepend(bucket, new_entry);
+        this.size = this.size + 1;
+
+        // Check if we need to resize
+        if this.size > (this.capacity * this.load_factor) {
+            this.resize();
+        }
+
+        return true;
+    }
+
+    fun get(var key: K): Option<V> {
+        let idx = this.get_bucket_index(key);
+        let bucket = this.buckets[idx];
+
+        var current = bucket;
+        while !is_empty(current) {
+            let entry = head(current);
+            if equals(entry.key, key) {
+                return Option.Some(entry.value);
+            }
+            current = tail(current);
+        }
+
+        return Option.None();
+    }
+
+    fun contains_key(var key: K): Bool {
+        return match this.get(key) {
+            Option.Some(_) => true,
+            Option.None() => false
+        };
+    }
+
+    fun remove(var key: K): Option<V> {
+        let idx = this.get_bucket_index(key);
+        let bucket = this.buckets[idx];
+
+        let result = remove_if(bucket, fun(var entry: Entry<K, V>) => equals(entry.key, key));
+
+        return match result {
+            RemoveResult.Removed(new_list, removed_entry) => {
+                this.buckets[idx] = new_list;
+                this.size = this.size - 1;
+                Option.Some(removed_entry.value)
+            },
+            RemoveResult.NotFound(list) => Option.None()
+        };
+    }
+
+    fun resize(): Void {
+        let old_buckets = this.buckets;
+        this.capacity = this.capacity * 2;
+        this.buckets = Array.with_capacity_and_init(this.capacity, fun(var idx: Int) => empty());
+        this.size = 0;
+
+        // Rehash all entries
+        var i = 0;
+        while i < length(old_buckets) {
+            let bucket = old_buckets[i];
+            var current = bucket;
+
+            while !is_empty(current) {
+                let entry = head(current);
+                this.insert(entry.key, entry.value);
+                current = tail(current);
+            }
+
+            i = i + 1;
+        }
+    }
+
+    fun clear(): Void {
+        this.buckets = Array.with_capacity_and_init(this.capacity, fun(var idx: Int) => empty());
+        this.size = 0;
+    }
+
+    fun len(): Int {
+        return this.size;
+    }
+
+    fun is_empty(): Bool {
+        return this.size == 0;
+    }
+
+    fun keys(): Array<K> {
+        var result = Array.new_empty();
+        var i = 0;
+
+        while i < this.capacity {
+            let bucket = this.buckets[i];
+            var current = bucket;
+
+            while !is_empty(current) {
+                let entry = head(current);
+                push(result, entry.key);
+                current = tail(current);
+            }
+
+            i = i + 1;
+        }
+
+        return result;
+    }
+
+    fun values(): Array<V> {
+        var result = Array.new_empty();
+        var i = 0;
+
+        while i < this.capacity {
+            let bucket = this.buckets[i];
+            var current = bucket;
+
+            while !is_empty(current) {
+                let entry = head(current);
+                push(result, entry.value);
+                current = tail(current);
+            }
+
+            i = i + 1;
+        }
+
+        return result;
+    }
+}
+
+// Helper type for key-value pairs
+type Entry<K, V> = class {
+    var key: K;
+    var value: V;
+
+    constructor new(var key: K, var value: V) {
+        this.key = key;
+        this.value = value;
+    }
+}
+
+// Simple linked list for chaining
+type List<T> = enum {
+    Empty(),
+    Cons(T, List<T>)
+}
+
+fun empty<T>(): List<T> {
+    return List.Empty();
+}
+
+fun prepend<T>(var list: List<T>, var value: T): List<T> {
+    return List.Cons(value, list);
+}
+
+fun is_empty<T>(var list: List<T>): Bool {
+    return match list {
+        List.Empty() => true,
+        List.Cons(_, _) => false
+    };
+}
+
+fun head<T>(var list: List<T>): T {
+    return match list {
+        List.Cons(value, _) => value,
+        List.Empty() => assert("head on empty list")
+    };
+}
+
+fun tail<T>(var list: List<T>): List<T> {
+    return match list {
+        List.Cons(_, rest) => rest,
+        List.Empty() => assert("tail on empty list")
+    };
+}
+
+type RemoveResult<T> = enum {
+    Removed(List<T>, T),
+    NotFound(List<T>)
+}
+
+fun remove_if<T>(var list: List<T>, var predicate: (T): Bool): RemoveResult<T> {
+    return match list {
+        List.Empty() => RemoveResult.NotFound(list),
+        List.Cons(value, rest) => {
+            if predicate(value) {
+                RemoveResult.Removed(rest, value)
+            } else {
+                match remove_if(rest, predicate) {
+                    RemoveResult.Removed(new_rest, removed) =>
+                        RemoveResult.Removed(prepend(new_rest, value), removed),
+                    RemoveResult.NotFound(_) =>
+                        RemoveResult.NotFound(list)
+                }
+            }
+        }
+    };
+}
+
+// Option type for get operations
+type Option<T> = enum {
+    Some(T),
+    None()
+}
